@@ -12,7 +12,7 @@ from dataset import MPCNNDatasetFactory
 from evaluation import MPCNNEvaluatorFactory
 from model import MPCNN
 from train import MPCNNTrainerFactory
-
+from visual import SimilarityVisualizer
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='PyTorch implementation of Multi-Perspective CNN')
@@ -65,7 +65,7 @@ if __name__ == '__main__':
 
     dataset_cls, embedding, train_loader, test_loader, dev_loader \
         = MPCNNDatasetFactory.get_dataset(args.dataset, args.word_vectors_dir, args.word_vectors_file, args.batch_size, args.device)
-    embedding.weight.requires_grad = False
+    embedding.weight.requires_grad = True
     if args.device != -1:
         with torch.cuda.device(args.device):
             embedding = embedding.cuda()
@@ -79,16 +79,19 @@ if __name__ == '__main__':
             model.cuda()
 
     optimizer = None
+    parameters = list(model.parameters())
+    parameters.append(embedding.weight)
     if args.optimizer == 'adam':
-        optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.regularization, eps=args.epsilon)
+        optimizer = optim.Adam(parameters, lr=args.lr, weight_decay=args.regularization, eps=args.epsilon)
     elif args.optimizer == 'sgd':
-        optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.regularization)
+        optimizer = optim.SGD(parameters, lr=args.lr, momentum=args.momentum, weight_decay=args.regularization)
     else:
         raise ValueError('optimizer not recognized: it should be either adam or sgd')
 
     train_evaluator = MPCNNEvaluatorFactory.get_evaluator(dataset_cls, model, embedding, train_loader, args.batch_size, args.device)
     test_evaluator = MPCNNEvaluatorFactory.get_evaluator(dataset_cls, model, embedding, test_loader, args.batch_size, args.device)
     dev_evaluator = MPCNNEvaluatorFactory.get_evaluator(dataset_cls, model, embedding, dev_loader, args.batch_size, args.device)
+
 
     trainer_config = {
         'optimizer': optimizer,
@@ -117,6 +120,9 @@ if __name__ == '__main__':
     logger.info('Evaluation metrics for test')
     logger.info('\t'.join([' '] + metric_names))
     logger.info('\t'.join(['test'] + list(map(str, scores))))
+
+    visualizer = SimilarityVisualizer(model, embedding, test_loader)
+    visualizer.visualize()
 
     if args.save_predictions:
         for dataset_name, loader in zip(('train', 'test', 'dev'), (train_loader, test_loader, dev_loader)):
